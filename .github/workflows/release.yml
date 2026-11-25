@@ -121,6 +121,8 @@ jobs:
           rpm=$(ls -- *.rpm) deb=$(ls -- *.deb) pkg=$(ls -- *.pkg.tar.zst)
           cd ..
           cat > notes.md <<'EOF'
+          # Linux Nvidia Hardware Colour Controls
+          
           ## Install
 
           Download the package for your distribution and install it with your package manager, which should also install the dependencies (PySide6, KDE's `kscreen-doctor`):
@@ -154,6 +156,6 @@ jobs:
           else
             echo "Creating draft $tag"
             gh release create "$tag" dist/* --draft --target "$GITHUB_SHA" \
-              --title "$tag" --notes-file notes.md --generate-notes
+              --title "Linux Nvidia Hardware Colour Controls $tag" --notes-file notes.md --generate-notes
           fi
           echo "Draft release: $(gh release view "$tag" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"
