@@ -1,0 +1,14 @@
+Package: linuxnvidiahwcc
+Version: @VERSION@-@PKGREL@
+Architecture: amd64
+Maintainer: AtmanActive <AtmanActive@users.noreply.github.com>
+Installed-Size: @INSTALLED_SIZE@
+Depends: @SHLIBS@, python3 (>= 3.9), python3-pyside6.qtcore, python3-pyside6.qtgui, python3-pyside6.qtwidgets, python3-pyside6.qtnetwork, libkscreen-bin, systemd
+Section: utils
+Priority: optional
+Homepage: https://github.com/AtmanActive/Linux-Nvidia-Hardware-Colour-Controls
+Description: NVIDIA hardware colour controls for KDE Plasma (Wayland)
+ NVIDIA Control Panel style Brightness, Contrast, Gamma and Digital Vibrance
+ for KDE Plasma 6 on Wayland, applied only in the GPU's display hardware: the
+ CRTC gamma LUT (through KWin) and the NVIDIA display engine's digital
+ vibrance. No software, shader or per-application colour correction.

@@ -1,11 +1,14 @@
 """Minimal ICC v4 display profile writer.
 
-The profile describes an exact sRGB/BT.709 display (so KWin's compositing is
-left untouched) and carries an ``MHC2`` tag -- Microsoft's hardware
-calibration tag -- containing:
+The profile describes an exact sRGB/BT.709 display with a gamma 2.2 tone
+curve (so KWin's compositing is left untouched) and carries the
+Brightness/Contrast/Gamma ramp twice, for different KWin versions:
 
-* an identity colour matrix (no colour change)
-* per-channel 1D LUTs (Brightness/Contrast/Gamma)
+* ``MHC2`` (Microsoft's hardware calibration tag): identity colour matrix plus
+  per-channel 1D LUTs. Used by KWin >= 6.4-ish (verified on 6.8), which lets
+  it take precedence over ``vcgt``.
+* ``vcgt`` (video card gamma table): the same per-channel LUTs. Used by older
+  KWin without MHC2 support (e.g. 6.3 in Debian 13).
 
 When KWin's colour power preference is "prefer efficiency", KWin programs the
 LUT into the CRTC ``GAMMA_LUT``: the display engine's hardware gamma ramp,
@@ -54,6 +57,15 @@ def _chrm() -> bytes:
     body = b"chrm" + b"\0" * 4 + struct.pack(">HH", 3, 1)  # 3 channels, ITU-R BT.709
     for x, y in (cm.BT709_R, cm.BT709_G, cm.BT709_B):
         body += _u16f16(x) + _u16f16(y)
+    return body
+
+
+def _vcgt(lut_r, lut_g, lut_b) -> bytes:
+    # Apple 'vcgt' tag, table form: type 0, 3 channels, n entries of 2 bytes each.
+    n = len(lut_r)
+    body = b"vcgt" + b"\0" * 4 + struct.pack(">IHHH", 0, 3, n, 2)
+    for lut in (lut_r, lut_g, lut_b):
+        body += b"".join(struct.pack(">H", int(round(min(max(v, 0.0), 1.0) * 65535))) for v in lut)
     return body
 
 
@@ -109,6 +121,7 @@ def build_profile(
         (b"gTRC", None),  # shares rTRC data
         (b"bTRC", None),
         (b"MHC2", _mhc2(m_xyz, lut, lut, lut)),
+        (b"vcgt", _vcgt(lut, lut, lut)),
     ]
 
     table_len = 4 + 12 * len(tags)

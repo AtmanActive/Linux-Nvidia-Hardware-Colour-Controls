@@ -10,6 +10,26 @@ Tested on CachyOS, KDE Plasma 6.8.3 (Wayland), NVIDIA open kernel modules 620.73
 
 ## Install
 
+### Install from a package (Fedora, Debian, CachyOS)
+
+Download the package for your distribution from the
+[Releases page](https://github.com/AtmanActive/Linux-Nvidia-Hardware-Colour-Controls/releases)
+and install it with your package manager, which should also install the dependencies:
+
+| Distribution | Install |
+|---|---|
+| **CachyOS** (also Arch Linux) | `sudo pacman -U linuxnvidiahwcc-<version>-x86_64.pkg.tar.zst` |
+| **Fedora** | `sudo dnf install ./linuxnvidiahwcc-<version>.x86_64.rpm` |
+| **Debian** 13 or newer | `sudo apt install ./linuxnvidiahwcc_<version>_amd64.deb` |
+
+Then start **Linux Nvidia Hardware Colour Controls** from the application menu and tick
+*Start at login*. Before removing the package, click **Reset Colours** (or run
+`linuxnvidiahwcc --reset`) to make KDE release the app's colour profile.
+
+Or install from source, for your user only:
+
+### Install from source
+
 ### 1. Install the requirements
 
 ```sh
@@ -67,8 +87,9 @@ git pull && ./install.sh   # option A; with option B, download again and re-run 
 
 ## Requirements
 
-* KDE Plasma 6 on Wayland (`kscreen-doctor`). Plasma 6.8 was tested; older 6.x may not
-  offload the `MHC2` LUT.
+* KDE Plasma 6 on Wayland (`kscreen-doctor`). Tested on Plasma 6.8. Older KWin without
+  `MHC2` support (such as Plasma 6.3 in Debian 13) uses the profile's `vcgt` table instead;
+  that path is checked with LittleCMS but not yet on real hardware.
 * NVIDIA driver with `nvidia_drm.modeset=1` (default on current drivers).
 * `pyside6`, `python`, and `base-devel` (to build the helper):
   `sudo pacman -S --needed pyside6 base-devel`
@@ -102,7 +123,7 @@ These findings were checked on real hardware by reading the CRTC properties back
 
 ## How it works
 
-* **Brightness/Contrast/Gamma**: Utilizing NVIDIA's own ramp formula (from `nvidia-settings`, `ComputeGammaRampVal`), using the Control Panel's ranges (0–100 %, 0–100 %, 0.30–2.80). It is written as the LUT of an ICC v4 profile's `MHC2` tag. The profile's primaries are exactly sRGB/BT.709 with a D65 white, so KWin's compositing is not altered. The profile is applied with `kscreen-doctor`, and KWin programs the LUT into the CRTC `GAMMA_LUT`. KWin stores the profile in its own output config, so it is active from the moment you log in.
+* **Brightness/Contrast/Gamma**: Utilizing NVIDIA's own ramp formula (from `nvidia-settings`, `ComputeGammaRampVal`), using the Control Panel's ranges (0–100 %, 0–100 %, 0.30–2.80). It is written into an ICC v4 profile twice: as the LUT of the `MHC2` tag (used by current KWin) and as a `vcgt` table (used by older KWin without MHC2 support, such as Plasma 6.3). The profile's primaries are exactly sRGB/BT.709 with a D65 white, so KWin's compositing is not altered. The profile is applied with `kscreen-doctor`, and KWin programs the LUT into the CRTC `GAMMA_LUT`. KWin stores the profile in its own output config, so it is active from the moment you log in.
 * **Digital Vibrance**: 0–100 % (50 % = neutral), mapped to the NVKMS range −1024…1023. The driver can forget it after suspend, DPMS or a modeset. While the window is open, the app checks every 3 s and re-applies it. While the app is in the tray it does nothing, so a lost vibrance is restored the next time you open the window or choose *Re-apply settings* from the tray menu.
 * **Display mapping**: Utilizing KDE output → DRM connector → CRTC index, which equals the NVIDIA display head → NVKMS port. EDID matching is avoided on purpose: HDMI splitters, switches and KVMs can make DRM and NVKMS report different EDIDs.
 * **Hardware only, enforced**: after every change the app reads the CRTC `GAMMA_LUT` and the NVKMS vibrance back from the GPU. If KWin did not put Brightness/Contrast/Gamma into the hardware LUT, the app **withdraws its profile** instead of letting KWin render it in a shader. It also always sets KDE's colour power preference to *prefer efficiency*, which is what allows the hardware offload in the first place.
@@ -115,6 +136,23 @@ The helper is built against NVKMS headers vendored in `helper/nvidia-headers` (s
 ```sh
 helper/update-headers.sh && ./install.sh
 ```
+
+## Making a release
+
+Releases are built by the **Release** workflow (`.github/workflows/release.yml`), started
+on demand from the repository's **Actions** tab: *Release* → *Run workflow*.
+
+1. Set `__version__` in `linuxnvidiahwcc/__init__.py` and push.
+2. Run the workflow. It builds the `.rpm` (Fedora), `.deb` (Debian) and `.pkg.tar.zst`
+   (CachyOS/Arch) in clean `fedora:latest`, `debian:stable` and `archlinux:latest`
+   containers, installs each package with its dependencies and smoke-tests it, then creates
+   a **draft** release `v<version>` with the packages and `SHA256SUMS` attached.
+3. Review the draft on the Releases page and publish it. Publishing creates the tag.
+
+Running it again for the same version updates the draft. To re-package a version that is
+already published, run it with *Package release* set to 2, 3, … (tagged `v<version>-2`, …).
+The same build also runs locally, as root in a container of the target distribution:
+`bash packaging/build-package.sh fedora` (or `debian`, `cachyos`).
 
 ## Credits
 

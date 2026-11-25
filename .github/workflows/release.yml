@@ -1,0 +1,159 @@
+# On-demand release: builds native packages for Fedora, Debian and CachyOS,
+# installs each one in a clean container to verify it, and creates (or
+# updates) a DRAFT GitHub release with the packages attached.
+#
+# Run it from the Actions tab: "Release" -> "Run workflow". The version comes
+# from __version__ in linuxnvidiahwcc/__init__.py. The release is tagged
+# v<version> (or v<version>-<package release> when re-packaging with a package
+# release above 1) when you publish the draft.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_release:
+        description: "Package release number (use 2, 3, ... to re-package the same app version)"
+        type: string
+        required: true
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read and validate version
+        id: read
+        env:
+          PKGREL: ${{ inputs.package_release }}
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' linuxnvidiahwcc/__init__.py)
+          if ! [[ $version =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error file=linuxnvidiahwcc/__init__.py::Could not read a valid __version__ (got '$version')"
+            exit 1
+          fi
+          if ! [[ $PKGREL =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::package_release must be a positive integer (got '$PKGREL')"
+            exit 1
+          fi
+          tag="v$version"
+          if [ "$PKGREL" != 1 ]; then tag="v$version-$PKGREL"; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Releasing **$tag** (version $version, package release $PKGREL)" >> "$GITHUB_STEP_SUMMARY"
+
+  package:
+    name: Package (${{ matrix.name }})
+    needs: version
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: fedora
+            name: Fedora
+            image: fedora:latest
+          - target: debian
+            name: Debian
+            image: debian:stable
+          # CachyOS is Arch-based: a plain x86_64 Arch package installs on both.
+          - target: cachyos
+            name: CachyOS
+            image: archlinux:latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build package
+        env:
+          PKGREL: ${{ inputs.package_release }}
+        run: bash packaging/build-package.sh "${{ matrix.target }}" dist
+
+      - name: Install and smoke-test package
+        run: bash packaging/smoke-test.sh "${{ matrix.target }}" dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Draft GitHub release
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Write release notes
+        run: |
+          cd dist
+          rpm=$(ls -- *.rpm) deb=$(ls -- *.deb) pkg=$(ls -- *.pkg.tar.zst)
+          cd ..
+          cat > notes.md <<'EOF'
+          ## Install
+
+          Download the package for your distribution and install it with your package manager, which should also install the dependencies (PySide6, KDE's `kscreen-doctor`):
+
+          | Distribution | Install |
+          |---|---|
+          | **CachyOS** (also Arch Linux) | `sudo pacman -U @PKG@` |
+          | **Fedora** | `sudo dnf install ./@RPM@` |
+          | **Debian** 13 or newer | `sudo apt install ./@DEB@` |
+
+          Then start **Linux Nvidia Hardware Colour Controls** from the application menu and tick *Start at login* to have your settings applied at every login.
+
+          Requires KDE Plasma 6 on Wayland and the NVIDIA driver with `nvidia_drm.modeset=1`. Before removing the package, click **Reset Colours** (or run `linuxnvidiahwcc --reset`) to make KDE release the app's colour profile.
+
+          `SHA256SUMS` lists the checksums of all packages.
+          EOF
+          sed -i -e "s|@RPM@|$rpm|" -e "s|@DEB@|$deb|" -e "s|@PKG@|$pkg|" notes.md
+          cat notes.md
+
+      - name: Create or update draft release
+        run: |
+          tag="$TAG"
+          if state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$state" != "true" ]; then
+              echo "::error::Release $tag is already published. Bump __version__ in linuxnvidiahwcc/__init__.py, or run with a higher package release to re-package it."
+              exit 1
+            fi
+            echo "Updating existing draft $tag"
+            gh release edit "$tag" --target "$GITHUB_SHA" --notes-file notes.md
+            gh release upload "$tag" dist/* --clobber
+          else
+            echo "Creating draft $tag"
+            gh release create "$tag" dist/* --draft --target "$GITHUB_SHA" \
+              --title "$tag" --notes-file notes.md --generate-notes
+          fi
+          echo "Draft release: $(gh release view "$tag" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"

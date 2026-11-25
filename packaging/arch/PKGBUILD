@@ -1,0 +1,28 @@
+# CachyOS / Arch Linux package.
+# Built by packaging/build-package.sh, which supplies the source tarball and
+# sets pkgver/pkgrel from linuxnvidiahwcc/__init__.py and the workflow input.
+
+pkgname=linuxnvidiahwcc
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="NVIDIA hardware brightness, contrast, gamma and digital vibrance controls for KDE Plasma (Wayland)"
+arch=('x86_64')
+url="https://github.com/AtmanActive/Linux-Nvidia-Hardware-Colour-Controls"
+license=('MIT')
+depends=('glibc' 'python' 'pyside6' 'libkscreen' 'systemd')
+makedepends=('gcc' 'make')
+options=('!debug')  # no separate -debug package
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  make helper
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

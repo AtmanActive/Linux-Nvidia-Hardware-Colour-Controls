@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Linux Nvidia Hardware Colour Controls
+GenericName=Display Colour Controls
+Comment=NVIDIA hardware brightness, contrast, gamma and digital vibrance
+Exec=linuxnvidiahwcc --show
+Icon=linuxnvidiahwcc
+Terminal=false
+Categories=Settings;HardwareSettings;Qt;
+Keywords=nvidia;vibrance;gamma;brightness;contrast;colour;color;
+StartupNotify=false
